@@ -9,7 +9,13 @@
 #pragma once
 
 #include <dlfcn.h>
+#if !defined(__APPLE__) || !defined(__MACH__)
+//see: on linux
 #include <link.h>
+#else
+//see: on macOS
+#include <stdlib.h>
+#endif
 
 #include <array>
 #include <climits>
@@ -71,13 +77,25 @@ class DynamicLibraryHandle {
   }
 
   std::tuple<Error, std::string> getFilename() {
+  #if !defined(__APPLE__) || !defined(__MACH__)
+  //see: on linux
     struct link_map* linkMap;
     int rv = ::dlinfo(ptr_.get(), RTLD_DI_LINKMAP, &linkMap);
     if (rv < 0) {
       return std::make_tuple(
           TP_CREATE_ERROR(DlError, ::dlerror()), std::string());
     }
+  #else
+  //see: on macOS
+    struct dl_info* info;
+    int rv = ::dladdr(ptr_.get(), &info);
+    if (rv < 0) {
+      return std::make_tuple(
+          TP_CREATE_ERROR(DlError, ::dlerror()), std::string());
+    }
+  #endif
     std::array<char, PATH_MAX> path;
+    //see: link to #include <stdlib.h>
     char* resolvedPath = ::realpath(linkMap->l_name, path.data());
     if (resolvedPath == nullptr) {
       return std::make_tuple(
