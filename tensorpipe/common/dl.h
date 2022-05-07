@@ -9,12 +9,12 @@
 #pragma once
 
 #include <dlfcn.h>
-#if !defined(__APPLE__) || !defined(__MACH__)
-//see: on linux
-#include <link.h>
-#else
+#if defined(__APPLE__) && defined(__MACH__)
 //see: on macOS
 #include <stdlib.h>
+#else
+//see: on linux
+#include <link.h>
 #endif
 
 #include <array>
@@ -77,7 +77,17 @@ class DynamicLibraryHandle {
   }
 
   std::tuple<Error, std::string> getFilename() {
-  #if !defined(__APPLE__) || !defined(__MACH__)
+    std::array<char, PATH_MAX> path;
+  #if defined(__APPLE__) && defined(__MACH__)
+  //see: on macOS
+    Dl_info info;
+    int rv = ::dladdr(ptr_.get(), &info);
+    if (rv < 0) {
+      return std::make_tuple(
+          TP_CREATE_ERROR(DlError, ::dlerror()), std::string());
+    }
+    char* resolvedPath = ::realpath(info.dli_fname, path.data());
+  #else
   //see: on linux
     struct link_map* linkMap;
     int rv = ::dlinfo(ptr_.get(), RTLD_DI_LINKMAP, &linkMap);
@@ -85,18 +95,9 @@ class DynamicLibraryHandle {
       return std::make_tuple(
           TP_CREATE_ERROR(DlError, ::dlerror()), std::string());
     }
-  #else
-  //see: on macOS
-    struct dl_info* info;
-    int rv = ::dladdr(ptr_.get(), &info);
-    if (rv < 0) {
-      return std::make_tuple(
-          TP_CREATE_ERROR(DlError, ::dlerror()), std::string());
-    }
-  #endif
-    std::array<char, PATH_MAX> path;
-    //see: link to #include <stdlib.h>
     char* resolvedPath = ::realpath(linkMap->l_name, path.data());
+  #endif
+    //see: link to #include <stdlib.h>
     if (resolvedPath == nullptr) {
       return std::make_tuple(
           TP_CREATE_ERROR(SystemError, "realpath", errno), std::string());
